@@ -1,11 +1,10 @@
-// import * as CLI from "https://raw.githubusercontent.com/littlelanguages/deno-lib-console-cli/0.1.2/mod.ts";
-import * as CLI from "https://raw.githubusercontent.com/littlelanguages/deno-lib-console-cli/main/mod.ts";
+import * as CLI from "https://raw.githubusercontent.com/littlelanguages/deno-lib-console-cli/0.2.0/mod.ts";
 import * as PP from "https://raw.githubusercontent.com/littlelanguages/deno-lib-text-prettyprint/0.3.2/mod.ts";
 
-import * as Kotlin from "https://raw.githubusercontent.com/littlelanguages/typepiler-tool-kotlin/main/mod.ts";
+import * as Kotlin from "https://raw.githubusercontent.com/littlelanguages/typepiler-tool-kotlin/0.1.0/mod.ts";
 
 import { errorLocation } from "https://raw.githubusercontent.com/littlelanguages/scanpiler/0.3.0/mod.ts";
-import * as Typepiler from "https://raw.githubusercontent.com/littlelanguages/typepiler/main/parser/typepiler-scanner.ts";
+import * as Typepiler from "https://raw.githubusercontent.com/littlelanguages/typepiler/0.1.0/parser/typepiler-scanner.ts";
 
 /*
 deno mod.ts kotlin --verbose --directory=./test/src/main/kotlin  \
