@@ -21,4 +21,9 @@ deno run --allow-read --allow-net --allow-write mod.ts kotlin --verbose --force 
     ./test/src/main/kotlin/composite/Simple.llt composite.Simple \
     ./test/src/main/kotlin/composite/Record.llt composite.Record
 
+if [[ "$?" != "0" ]]
+then
+    exit -1
+fi
+
 (cd test ; ./gradlew test)
