@@ -1,133 +1,22 @@
-import * as CLI from "https://raw.githubusercontent.com/littlelanguages/deno-lib-console-cli/0.1.2/mod.ts";
+// import * as CLI from "https://raw.githubusercontent.com/littlelanguages/deno-lib-console-cli/0.1.2/mod.ts";
+import * as CLI from "https://raw.githubusercontent.com/littlelanguages/deno-lib-console-cli/main/mod.ts";
 import * as PP from "https://raw.githubusercontent.com/littlelanguages/deno-lib-text-prettyprint/0.3.2/mod.ts";
 
 import * as Kotlin from "https://raw.githubusercontent.com/littlelanguages/typepiler-tool-kotlin/main/mod.ts";
 
+import { errorLocation } from "https://raw.githubusercontent.com/littlelanguages/scanpiler/0.3.0/mod.ts";
+import * as Typepiler from "https://raw.githubusercontent.com/littlelanguages/typepiler/main/parser/typepiler-scanner.ts";
+
 /*
-deno mod.ts kotlin --versbose --directory ./test/src/main/kotlin  \
-  ./test/src/main/kotlin/sets/Types.llt set.Types \
+deno mod.ts kotlin --verbose --directory=./test/src/main/kotlin  \
+  ./test/src/main/kotlin/sets/Types.llt sets.Types \
   ./test/src/main/kotlin/alias/Sample.llt alias.Sample \
   ./test/src/main/kotlin/union/Sample.llt union.Sample \
   ./test/src/main/kotlin/composite/Simple.llt composite.Simple \
   ./test/src/main/kotlin/composite/Record.llt composite.Record
-]);
-
 */
 
-class ValuesCommand extends CLI.Command {
-  showValue: ShowValue;
-  private action: (
-    cli: CLI.Definition,
-    files: Array<string>,
-    options: Map<string, unknown>,
-  ) => void;
-
-  constructor(
-    name: string,
-    help: string,
-    options: Array<CLI.Option>,
-    showValue: ShowValue,
-    action: (
-      cli: CLI.Definition,
-      files: Array<string>,
-      options: Map<string, unknown>,
-    ) => void,
-  ) {
-    super(name, help, options);
-    this.showValue = showValue;
-    this.action = action;
-  }
-
-  canDo(args: Array<string>) {
-    return (args.length > 0 && args[0] === this.name);
-  }
-
-  doNow(
-    cli: CLI.Definition,
-    args: Array<string>,
-    values: Map<string, undefined>,
-  ): void {
-    processOptions(cli, this.options, args, values);
-
-    if (args.length === 0) {
-      if (this.showValue.optional) {
-        this.action(cli, [], values);
-      } else {
-        reportErrorAndTerminate(
-          `${this.showValue.name} requires a value`,
-          cli,
-        );
-      }
-    } else {
-      this.action(cli, args, values);
-    }
-  }
-
-  show(): PP.Doc {
-    const usageName = this.showValue.optional
-      ? `[${this.showValue.name}]`
-      : this.showValue.name;
-
-    return PP.vcat([
-      "USAGE:",
-      PP.nest(
-        4,
-        PP.hsep(
-          [
-            PP.text(this.name),
-            this.options.length === 0 ? PP.empty : "{OPTION}",
-            usageName,
-          ],
-        ),
-      ),
-      (this.options.length === 0) ? PP.empty : PP.vcat(
-        [
-          "",
-          "OPTION:",
-          PP.nest(4, PP.vcat(this.options.flatMap((o) => o.show()))),
-        ],
-      ),
-      "",
-      this.showValue.name,
-      PP.nest(4, this.showValue.help),
-    ]);
-  }
-}
-
-function reportErrorAndTerminate(errorMsg: string, cli: CLI.Definition): void {
-  console.log(`Error: ${errorMsg}`);
-  Deno.exit(-1);
-}
-
-function processOptions(
-  cli: CLI.Definition,
-  options: Array<CLI.Option>,
-  args: Array<string>,
-  values: Map<string, undefined>,
-): void {
-  while (args.length > 0 && args[0].startsWith("-")) {
-    if (args[0] === "--") {
-      args.splice(0, 1);
-      break;
-    }
-
-    const option = options.find((o) => o.canDo(args));
-
-    if (option === undefined) {
-      reportErrorAndTerminate(`Invalid option ${args[0]}`, cli);
-    } else {
-      option.doNow(cli, args, values);
-    }
-  }
-}
-
-type ShowValue = {
-  name: string;
-  optional: boolean;
-  help: string;
-};
-
-const kotlinCmd = new ValuesCommand(
+const kotlinCmd = new CLI.ValuesCommand(
   "kotlin",
   "Create an implementation of types in Kotlin",
   [
@@ -169,12 +58,193 @@ const kotlinCmd = new ValuesCommand(
           force: vals.get("force") as boolean | false,
           verbose: vals.get("verbose") as boolean | false,
         },
+      ).then((errors) =>
+        errors.length > 0
+          ? PP.render(PP.vcat([showErrors(errors), ""]), Deno.stdout)
+            .then((_) => Deno.exit(1))
+          : Promise.resolve()
       );
     } else {
-      reportErrorAndTerminate("Unmatched src files onto target packages", cli);
+      CLI.reportErrorAndTerminate(
+        "Unmatched src files onto target packages",
+        cli,
+      );
     }
   },
 );
+
+const showErrors = (errors: Kotlin.Errors): PP.Doc =>
+  PP.vcat(errors.map(showError));
+
+const showError = (error: Kotlin.ErrorItem): PP.Doc => {
+  switch (error.tag) {
+    case "PackageNotSetError":
+      return PP.hcat(
+        [
+          "Reference is made to ",
+          error.name,
+          " which has not been passed to the CLI.",
+        ],
+      );
+    case "DuplicateDefinitionError":
+      return PP.hcat(
+        [
+          "Attempt to define the same name ",
+          error.name,
+          " again",
+          errorLocation(error.location, error.src),
+        ],
+      );
+    case "DuplicateFieldNameError":
+      return PP.hcat(
+        [
+          "Attempt to define a duplicate field with the name ",
+          error.name,
+          errorLocation(error.location, error.src),
+        ],
+      );
+    case "DuplicateSetElementError":
+      return PP.hcat(
+        [
+          "Attempt to define a duplicate set element with the name ",
+          error.name,
+          errorLocation(error.location, error.src),
+        ],
+      );
+    case "IncorrectTypeArityError":
+      return PP.hcat(
+        [
+          "The type ",
+          error.name,
+          " requires ",
+          error.expected.toString(),
+          " arguments but received ",
+          error.actual.toString(),
+          errorLocation(error.location, error.src),
+        ],
+      );
+    case "UseCycleError":
+      return PP.vcat(
+        [
+          "A cyclic definition exists between these files:",
+          PP.nest(2, PP.vcat(error.names)),
+        ],
+      );
+    case "TypeDefinitionFileDoesNotExistError":
+      return PP.hcat(
+        [
+          "The referenced file ",
+          error.name,
+          " does not exist",
+        ],
+      );
+    case "UnionDeclarationCyclicReferenceError":
+      return PP.hcat(
+        [
+          "The union declaration ",
+          error.name,
+          " is dependent on itself",
+          errorLocation(error.location, error.src),
+        ],
+      );
+    case "UnionDeclarationReferenceAliasDeclarationError":
+      return PP.hcat(
+        [
+          "The union declaration ",
+          error.name,
+          " is dependent on the alias declaration ",
+          error.reference,
+          errorLocation(error.location, error.src),
+        ],
+      );
+    case "UnionDeclarationReferenceCompoundTypeError":
+      return PP.hcat(
+        [
+          "A union declaration is dependent on a compound declaration",
+          errorLocation(error.location, error.src),
+        ],
+      );
+    case "UnionDeclarationReferenceInteranlDeclarationError":
+      return PP.hcat(
+        [
+          "The union declaration ",
+          error.name,
+          " is dependent on the internal declaration ",
+          error.reference,
+          errorLocation(error.location, error.src),
+        ],
+      );
+    case "UnionDeclarationReferenceSetDeclarationError":
+      return PP.hcat(
+        [
+          "The union declaration ",
+          error.name,
+          " is dependent on the set ",
+          error.reference,
+          errorLocation(error.location, error.src),
+        ],
+      );
+    case "UnknownDeclarationError":
+      return PP.hcat(
+        [
+          "Reference to an unknown declaration ",
+          error.name,
+          errorLocation(error.location, error.src),
+        ],
+      );
+    case "SyntaxError":
+      return PP.hcat([
+        "Unexpected token ",
+        ttokenAsString(error.found[0]),
+        ". Expected ",
+        PP.join(error.expected.map(ttokenAsString), ", ", " or "),
+        errorLocation(error.found[1], undefined),
+      ]);
+  }
+};
+
+const ttokenAsString = (ttoken: Typepiler.TToken): string => {
+  switch (ttoken) {
+    case Typepiler.TToken.RParen:
+      return "')'";
+    case Typepiler.TToken.LParen:
+      return "'('";
+    case Typepiler.TToken.Period:
+      return "'.'";
+    case Typepiler.TToken.Star:
+      return "'*'";
+    case Typepiler.TToken.Colon:
+      return "':'";
+    case Typepiler.TToken.RCurly:
+      return "'}'";
+    case Typepiler.TToken.Comma:
+      return "','";
+    case Typepiler.TToken.LCurly:
+      return "'{'";
+    case Typepiler.TToken.Bar:
+      return "'|'";
+    case Typepiler.TToken.ColonColon:
+      return "'::'";
+    case Typepiler.TToken.Equal:
+      return "'='";
+    case Typepiler.TToken.Semicolon:
+      return "';'";
+    case Typepiler.TToken.As:
+      return "as";
+    case Typepiler.TToken.Use:
+      return "use";
+    case Typepiler.TToken.LowerID:
+      return "lower case identifier";
+    case Typepiler.TToken.UpperID:
+      return "upper identifier";
+    case Typepiler.TToken.LiteralString:
+      return "literal string";
+    case Typepiler.TToken.EOS:
+      return "end of stream";
+    case Typepiler.TToken.ERROR:
+      return "error";
+  }
+};
 
 const cli = {
   name: "typepiler",
